@@ -26,6 +26,11 @@ import re
 import oz.Guest
 import oz.ozutil
 import oz.OzException
+try:
+    import urllib.parse as urlparse
+except ImportError:
+    import urlparse
+
 
 class MageiaGuest(oz.Guest.CDGuest):
     """
@@ -33,6 +38,8 @@ class MageiaGuest(oz.Guest.CDGuest):
     """
     def __init__(self, tdl, config, auto, output_disk, netdev, diskbus,
                  macaddress):
+        if netdev is None:
+            netdev = "virtio"
         oz.Guest.CDGuest.__init__(self, tdl, config, auto, output_disk, netdev,
                                   None, None, diskbus, True, False, macaddress)
 
@@ -86,7 +93,12 @@ class MageiaGuest(oz.Guest.CDGuest):
             os.unlink(outname)
         except:
             pass
-
+        if not os.path.exists(os.path.join(pathdir,
+                                           "media")):
+            url = urlparse.urlparse(self.tdl.repositories['install'].url)
+            install_flags=  "automatic=method:%s,ser:%s,dir:%s,int:eth0,netw:dhcp" % (url.scheme, url.hostname, url.path)
+        else:
+            install_flags = "automatic=method:cdrom"
         self.log.debug("Modifying isolinux.cfg")
         isolinuxcfg = os.path.join(pathdir, "isolinux", "isolinux.cfg")
         f = open(isolinuxcfg, 'w')
@@ -95,7 +107,7 @@ class MageiaGuest(oz.Guest.CDGuest):
         f.write("prompt 0\n")
         f.write("label customiso\n")
         f.write("  kernel alt0/vmlinuz\n")
-        f.write("  append initrd=alt0/all.rdz ramdisk_size=128000 root=/dev/ram3 acpi=ht vga=788 automatic=method:cdrom kickstart=floppy\n")
+        f.write("  append initrd=alt0/all.rdz ramdisk_size=128000 root=/dev/ram3 acpi=ht vga=788 kickstart=floppy %s\n" % install_flags)
         f.close()
 
     def _generate_new_iso(self):
@@ -104,9 +116,10 @@ class MageiaGuest(oz.Guest.CDGuest):
         """
         self.log.info("Generating new ISO")
 
-        isolinuxdir = ""
-        if self.tdl.update in ["4"]:
+        if os.path.exists(os.path.join(self.iso_contents, self.mageia_arch)):
             isolinuxdir = self.mageia_arch
+        else:
+            isolinuxdir = ""
 
         isolinuxbin = os.path.join(isolinuxdir, "isolinux/isolinux.bin")
         isolinuxboot = os.path.join(isolinuxdir, "isolinux/boot.cat")
