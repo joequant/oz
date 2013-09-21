@@ -502,7 +502,13 @@ class Guest(object):
         driver.setProp("type", self.image_type)
 
         # install disk (if any)
-        if installdev:
+        if not installdev:
+            installdev_list = []
+        elif not type(installdev) is list:
+            installdev_list = [installdev]
+        else:
+            installdev_list = installdev
+        for installdev in installdev_list:
             install = devices.newChild(None, "disk", None)
             install.setProp("type", "file")
             install.setProp("device", installdev.devicetype)
@@ -1664,7 +1670,8 @@ class CDGuest(Guest):
         out.close()
 
     def _do_install(self, timeout=None, force=False, reboots=0,
-                    kernelfname=None, ramdiskfname=None, cmdline=None):
+                    kernelfname=None, ramdiskfname=None, cmdline=None,
+                    extrainstalldevs=None):
         """
         Internal method to actually run the installation.
         """
@@ -1679,7 +1686,9 @@ class CDGuest(Guest):
             timeout = 1200
 
         cddev = self._InstallDev("cdrom", self.output_iso, "hdc")
-
+        if extrainstalldevs != None:
+            extrainstalldevs.append(cddev)
+            cddev = extrainstalldevs
         reboots_to_go = reboots
         while reboots_to_go >= 0:
             # if reboots_to_go is the same as reboots, it means that this is
