@@ -26,12 +26,18 @@ import oz.Guest
 import oz.ozutil
 import oz.OzException
 
+try:
+    import urllib.parse as urlparse
+except ImportError:
+    import urlparse
 class MageiaGuest(oz.Guest.CDGuest):
     """
     Class for Mageia 4 installation.
     """
     def __init__(self, tdl, config, auto, output_disk, netdev, diskbus,
                  macaddress):
+        if netdev is None:
+            netdev = "virtio"
         oz.Guest.CDGuest.__init__(self, tdl, config, auto, output_disk, netdev,
                                   None, None, diskbus, True, False, macaddress)
 
@@ -50,7 +56,12 @@ class MageiaGuest(oz.Guest.CDGuest):
 
         self.log.debug("Copying cfg file to floppy image")
 
-        outname = os.path.join(self.iso_contents, "auto_inst.cfg")
+        pathdir = os.path.join(self.iso_contents, self.mageia_arch)
+
+        if not os.path.exists(pathdir):
+            pathdir = self.iso_contents
+
+        outname = os.path.join(self.icicle_tmp, "auto_inst.cfg")
 
         if self.default_auto_file():
 
@@ -67,24 +78,35 @@ class MageiaGuest(oz.Guest.CDGuest):
             oz.ozutil.copy_modify_file(self.auto, outname, _cfg_sub)
         else:
             shutil.copy(self.auto, outname)
-
-        oz.ozutil.subprocess_check_output(["/sbin/mkfs.msdos", "-C",
+        try:
+            os.unlink(self.output_floppy)
+        except:
+            pass
+        oz.ozutil.subprocess_check_output(["/sbin/mkfs.msdos", "-C", 
                                            self.output_floppy, "1440"])
         oz.ozutil.subprocess_check_output(["mcopy", "-n", "-o", "-i",
                                            self.output_floppy, outname,
                                            "::AUTO_INST.CFG"])
-
+        try:
+            os.unlink(outname)
+        except:
+            pass
+        if not os.path.exists(os.path.join(pathdir,
+                                           "media")):
+            url = urlparse.urlparse(self.tdl.repositories['install'].url)
+            install_flags=  "automatic=method:%s,ser:%s,dir:%s,int:eth0,netw:dhcp" % (url.scheme, url.hostname, url.path)
+        else:
+            install_flags = "automatic=method:cdrom"
         self.log.debug("Modifying isolinux.cfg")
-        isolinuxcfg = os.path.join(self.iso_contents, "isolinux", "isolinux.cfg")
-        with open(isolinuxcfg, 'w') as f:
-            f.write("""\
-default customiso
-timeout 1
-prompt 0
-label customiso
-  kernel alt0/vmlinuz
-  append initrd=alt0/all.rdz ramdisk_size=128000 root=/dev/ram3 acpi=ht vga=788 automatic=method:cdrom kickstart=floppy
-""")
+        isolinuxcfg = os.path.join(pathdir, "isolinux", "isolinux.cfg")
+        f = open(isolinuxcfg, 'w')
+        f.write("default customiso\n")
+        f.write("timeout 1\n")
+        f.write("prompt 0\n")
+        f.write("label customiso\n")
+        f.write("  kernel alt0/vmlinuz\n")
+        f.write("  append initrd=alt0/all.rdz ramdisk_size=128000 root=/dev/ram3 acpi=ht vga=788 kickstart=floppy %s\n" % install_flags)
+        f.close()
 
     def _generate_new_iso(self):
         """
@@ -92,9 +114,10 @@ label customiso
         """
         self.log.info("Generating new ISO")
 
-        isolinuxdir = ""
-        if self.tdl.update in ["4"]:
+        if os.path.exists(os.path.join(self.iso_contents, self.mageia_arch)):
             isolinuxdir = self.mageia_arch
+        else:
+            isolinuxdir = ""
 
         isolinuxbin = os.path.join(isolinuxdir, "isolinux/isolinux.bin")
         isolinuxboot = os.path.join(isolinuxdir, "isolinux/boot.cat")
